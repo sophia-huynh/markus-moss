@@ -999,12 +999,13 @@ class MarkusMoss:
 
                 short_path = os.path.join(group, "org")
                 code_file_path = os.path.join(select_case_dir, short_path)
-                for filename in os.listdir(code_file_path):
-                    path = os.path.join(code_file_path, filename)
-                    rel_path = os.path.join('submission_files', group, filename)
-                    files_to_highlights[rel_path] = _HighlightedFile(filename,
-                                                                 path,
-                                                                 self.language)
+                if os.path.exists(code_file_path):
+                    for filename in os.listdir(code_file_path):
+                        path = os.path.join(code_file_path, filename)
+                        rel_path = os.path.join('submission_files', group, filename)
+                        files_to_highlights[rel_path] = _HighlightedFile(filename,
+                                                                     path,
+                                                                     self.language)
 
             # Extract all matches and related information, generating the relevant PDFs
             # Copy the match's moss.html and rename it to case_#.html

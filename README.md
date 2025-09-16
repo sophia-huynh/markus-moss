@@ -45,6 +45,7 @@ Arguments can be specified on the command line or in a config file (see below).
 * --html-parser : (string) bs4 html parser: default is 'html.parser'
 * --force : redo all specified actions: default is not to redo previously executed actions
 * --verbose : log actions to stdout
+* --select : (int) a single case number or (string) 2 or more group names to generate individual reports for.
 
 #### config format
 
@@ -71,6 +72,31 @@ Note that the config file uses underscores instead of hyphens.
 Information about obtaining the `markus_api_key` and `markus_url` can be found here: https://github.com/MarkUsProject/Markus/wiki/RESTful-API#authentication
 
 Information about obtaining the `moss_userid` can be found here: http://moss.stanford.edu/
+
+##### Selecting cases
+When using the `--select` argument, the `selected` directory will be generated to produce a folder
+with the specified case (in the case of a case number being provided), or all cases involving the
+groups (in the case of a list of group names being provided).
+
+The toml file can take multiple sets of groups through the `selected_groups` argument. For example:
+```toml
+selected_groups = [["group 1", "group 2"],
+                   ["group 3", "group 4", "group 5"]]
+```
+
+When more than 2 groups are provided in a single set, all cases involving any pair of groups
+will be reported.
+
+##### Excluding matches
+Specific matches within cases may also be provided through the `exclude_matches` argument in the `toml`
+config file to exclude them from selected results (see above). 
+
+This should map the case number to the match numbers to exclude. For example:
+
+```toml
+exclude_matches = { 1 = [0, 8] }
+```
+This would exclude matches 0 and 8 from being reported for reports containing case 1.
 
 #### actions
 

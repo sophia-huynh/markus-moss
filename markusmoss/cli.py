@@ -45,6 +45,8 @@ def _parse_args():
     parser.add_argument("--generate-config", nargs='?', default=-1)
     parser.add_argument("-f", "--force", action="store_true")
     parser.add_argument("-v", "--verbose", action="store_true")
+    parser.add_argument("-s", "--select", nargs='+',
+                        help="A single match number, or a list of group names")
 
     return _parse_config(parser.parse_args())
 
@@ -60,7 +62,8 @@ def cli():
                 toml.dump(kwargs, f)
         return
     actions = kwargs.pop("actions")
-    MarkusMoss(**kwargs).run(actions=actions)
+    selected_groups = kwargs.pop("selected_groups")
+    MarkusMoss(**kwargs).run(actions=actions, selected_groups=selected_groups)
 
 
 if __name__ == "__main__":

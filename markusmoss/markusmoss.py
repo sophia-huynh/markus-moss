@@ -1,3 +1,4 @@
+from __future__ import annotations
 import collections
 import glob
 import os
@@ -87,7 +88,8 @@ class _GroupFiles:
     def __init__(self, name: str, cover: str, members: list | None = None) -> None:
         self.name = name
         if members:
-            self.members = [member['user_name'] for member in members]
+            self.members = ["{} {}".format(member['first_name'], member['last_name'])
+                            for member in members]
         else:
             self.members = [name]
         self.cover = cover
@@ -103,11 +105,12 @@ class _GroupFiles:
 
     @property
     def group_header(self):
-        cleaned_name = self.name.replace("_", " ")
-        members = " - ".join(self.members)
-        if members == cleaned_name:
-            return cleaned_name
-        return f"{cleaned_name} ({members})"
+        members = ", ".join(self.members)
+
+        if len(self.members) == 1:
+            return members
+
+        return f"{self.name} ({members})"
 
     def add_to_merger(self, pdf_merger) -> None:
         """Make a single PDF for the group including the cover page and
@@ -118,6 +121,120 @@ class _GroupFiles:
 
         for file in sorted(self.files.keys()):
             pdf_merger.add_pdf(IncludePDF(self.files[file]))
+
+
+class _MatchDetails:
+    """Tracks the details about one part of a match.
+    """
+    filepath: str
+    header: str
+    start: int
+    end: int
+    code: str
+
+    def __init__(self, filepath: str, header: str,
+                 start: int, end: int, code: str) -> None:
+        self.filepath = filepath
+        self.header = header
+        self.start = start
+        self.end = end
+        self.code = code
+
+    def __iter__(self):
+        for attr in [self.filepath, self.header, self.start, self.end, self.code]:
+            yield attr
+
+
+class _Case:
+    matches: list[tuple[_MatchDetails, _MatchDetails]]
+    _markus_moss: MarkusMoss
+
+    def __init__(self, case_file: str, mm: MarkusMoss) -> None:
+        """
+        Initialize this _Case based on information in case_file.
+        """
+        with open(case_file) as f:
+            html = BeautifulSoup(f.read(), features='html5lib')
+        top_table = html.select_one("#top").select_one("table")
+
+        # Keep the headers of the match
+        current_headers = ('', '')
+
+        # Build a list of match tuples in the form
+        # [((href1, start, end), (href2, start, end))]
+        href_line_pairs = []
+        for row in top_table.select("tr"):
+            headers = row.select("th")
+            data = row.select("td")
+            if headers:
+                current_headers = tuple([headers[i].contents[0] for i in range(0, len(headers), 2)])
+            else:
+                current_pairs = []
+                for i in range(0, len(data), 2):
+                    a_href = data[i].select_one("a")
+                    href = a_href.get("href").strip("#")
+                    start, end = (int(num) for num in a_href.contents[0].split("-"))
+                    current_pairs.append((href, start, end))
+                href_line_pairs.append(tuple(current_pairs))
+
+        # Maps the match IDs to the code
+        href_to_code = {}
+
+        for match_id in ["#match-0", "#match-1"]:
+            match = html.select_one(match_id)
+            a_hrefs = match.select("a")
+            for a_href in a_hrefs:
+                match_id = a_href.get("id")
+                if not match_id:
+                    continue
+
+                # Code is in the font tag following the anchor (and is the last element.)
+                content = a_href.next_element.contents[-1]
+                href_to_code[match_id] = content
+
+        matches = []
+        for pair in href_line_pairs:
+            current_pair = []
+            for i in range(len(pair)):
+                match, original_header = pair[i], current_headers[i]
+                filepath = mm.get_path_from_header(original_header)
+                header = mm.format_header(original_header)
+                href, start, end = match
+                code = href_to_code[href].strip("\n")
+
+                current_pair.append(_MatchDetails(filepath, f"{header}", start, end,
+                                                  str(code)))
+            matches.append(tuple(current_pair))
+
+        self.matches = matches
+        self._markus_moss = mm
+
+    def get_name(self) -> str:
+        """Return the header/name for this _Case.
+        The name for a case is in the form:
+        <group name> <file> VS <group name> <file> as defined by the headers,
+        and is based on the first match in this case.
+
+        If a name cannot be identified, return an empty string.
+        """
+        if not self.matches:
+            return ''
+
+        m1, m2 = self.matches[0]
+        h1 = m1.header
+        h2 = m2.header
+
+        return f"{h1} VS {h2}"
+
+    def __len__(self) -> int:
+        return len(self.matches)
+
+    def __iter__(self):
+        for pair in self.matches:
+            yield pair
+
+    def __getitem__(self, item: int):
+        return self.matches[item]
 
 
 class MarkusMoss:
@@ -159,14 +276,22 @@ class MarkusMoss:
             file_glob: str = "**/*",
             force: bool = False,
             verbose: bool = False,
-            select: Optional[list[str]] = None,
+            selected_groups: Optional[list[str]] = None,
             exclude_matches: Optional[dict[int | str, list[int]]] = None
     ) -> None:
         self.force = force
         self.verbose = verbose
         self.file_glob = file_glob
         self.groups = groups
-        self.select = select if select else []
+
+        if (selected_groups and
+                len(selected_groups) > 1 and
+                isinstance(selected_groups[0], str)):
+            # Ensure that group names are in a list of lists, rather than
+            # a list of strings
+            selected_groups = [selected_groups]
+
+        self.selected_groups = selected_groups if selected_groups else []
         self.exclude_matches = exclude_matches
         self.__group_data = None
         self.__membership_data = None
@@ -185,17 +310,11 @@ class MarkusMoss:
         self.__workdir = workdir
         self.__language = language
 
-    def run(self, actions: Optional[Iterable[str]] = None,
-            selected_groups: Optional[list[list[str] | int]] = None) -> None:
+    def run(self, actions: Optional[Iterable[str]] = None) -> None:
         if actions is None:
             actions = self.ACTIONS
 
-        if selected_groups:
-            if len(self.select) > 1:
-                self.select = [self.select]
-            self.select = self.select + selected_groups
-
-        if self.select and "select_match" not in actions:
+        if self.selected_groups and "select_match" not in actions:
             actions += ["select_match"]
 
         for action in actions:
@@ -814,7 +933,7 @@ class MarkusMoss:
         return dest
 
     @staticmethod
-    def _get_path_from_header(moss_header: str) -> str:
+    def get_path_from_header(moss_header: str) -> str:
         """From a moss header, return the filepath for the given file.
         """
         header_re = r"(.*) \([0-9]*%\)"
@@ -828,7 +947,7 @@ class MarkusMoss:
         group_name, filename = re.match(details_re, file_path).groups()
         return group_name, filename
 
-    def _format_header(self, moss_header: str) -> str:
+    def format_header(self, moss_header: str) -> str:
         """Return a header in the format:
             group name (members, if different) - file
         Given a header from moss' table.
@@ -837,88 +956,33 @@ class MarkusMoss:
         is returned as is.
         """
         try:
-            file_path = self._get_path_from_header(moss_header)
+            file_path = self.get_path_from_header(moss_header)
             group_name, filename = self._get_group_and_file_from_path(file_path)
 
             group_members = self._membership_data[group_name]
-            members = ", ".join([member['user_name'] for member in group_members])
-            if members == group_name:
-                return f"{group_name}: {filename}"
-            return f"{group_name} ({members}): {filename}"
+            members = ", ".join([
+                "{} {}".format(member['first_name'], member['last_name'])
+                for member in group_members
+            ])
+
+            if len(group_members) > 1:
+                members = f"{group_name} ({members})"
+
+            return f"{members}'s {filename}"
         except:
             return moss_header
 
-    def extract_matches(self, case_file: str) -> list[tuple[tuple[str, str, int, int, str], \
-            tuple[str, str, int, int, str]]]:
-        """Return a list of tuple containing the header-code pairs for each
-        match in case_file.
-
-        The returned list is in the form:
-            [((filepath, header, line start, line end, code1),
-              (filepath, header, line start, line end, code2)),
-             ...]
+    def extract_matches(self, case_file: str) -> _Case:
+        """Return a _Case containing all details from case_file.
         """
-        with open(case_file) as f:
-            html = BeautifulSoup(f.read(), features='html5lib')
-        top_table = html.select_one("#top").select_one("table")
-
-        # Keep the headers of the match
-        current_headers = ('', '')
-
-        # Build a list of match tuples in the form
-        # [((href1, start, end), (href2, start, end))]
-        href_line_pairs = []
-        for row in top_table.select("tr"):
-            headers = row.select("th")
-            data = row.select("td")
-            if headers:
-                current_headers = tuple([headers[i].contents[0] for i in range(0, len(headers), 2)])
-            else:
-                current_pairs = []
-                for i in range(0, len(data), 2):
-                    a_href = data[i].select_one("a")
-                    href = a_href.get("href").strip("#")
-                    start, end = (int(num) for num in a_href.contents[0].split("-"))
-                    current_pairs.append((href, start, end))
-                href_line_pairs.append(tuple(current_pairs))
-
-        # Maps the match IDs to the code
-        href_to_code = {}
-
-        for match_id in ["#match-0", "#match-1"]:
-            match = html.select_one(match_id)
-            a_hrefs = match.select("a")
-            for a_href in a_hrefs:
-                match_id = a_href.get("id")
-                if not match_id:
-                    continue
-
-                # Code is in the font tag following the anchor (and is the last element.)
-                content = a_href.next_element.contents[-1]
-                href_to_code[match_id] = content
-
-        match_details = []
-        for pair in href_line_pairs:
-            current_pair = []
-            for i in range(len(pair)):
-                match, original_header = pair[i], current_headers[i]
-                filepath = self._get_path_from_header(original_header)
-                header = self._format_header(original_header)
-                href, start, end = match
-                code = href_to_code[href].strip("\n")
-
-                current_pair.append((filepath, f"{header}", start, end,
-                                     str(code)))
-            match_details.append(tuple(current_pair))
-
-        return match_details
+        return _Case(case_file, self)
 
     def _get_select_groups_matches(self) -> tuple[list[set[str]], set[str]]:
         """Return a tuple where the first element is a list of group name sets
         and the second is a list of matches.
 
         This information should be based on the information provided in self.select
-        (i.e. passed in with -s / --select.)
+        (i.e. passed in with -s / --selected-groups.)
 
         Precondition:
         - The elements in self.select are either an integer representing a case number
@@ -927,7 +991,7 @@ class MarkusMoss:
         groups = []
         matches = set()
 
-        for item in self.select:
+        for item in self.selected_groups:
             if not isinstance(item, list):
                 matches.add(f'case_{item}' if 'case_' not in item else item)
             else:
@@ -1004,8 +1068,8 @@ class MarkusMoss:
                         path = os.path.join(code_file_path, filename)
                         rel_path = os.path.join('submission_files', group, filename)
                         files_to_highlights[rel_path] = _HighlightedFile(filename,
-                                                                     path,
-                                                                     self.language)
+                                                                         path,
+                                                                         self.language)
 
             # Extract all matches and related information, generating the relevant PDFs
             # Copy the match's moss.html and rename it to case_#.html
@@ -1015,17 +1079,18 @@ class MarkusMoss:
 
             # Create a PDF for the match
             match_details = self.extract_matches(new_case_location)
-            case_name = f"Case {case_number}"
+            case_name = match_details.get_name()
+            case_name = case_name if case_name else case_number
             all_html = [f"<h1>{case_name}</h1>"]
 
+            current_match_number = 1
             for i in range(len(match_details)):
                 # Skip the match if it's an exclusion
                 if case_number in self.exclude_matches and i in self.exclude_matches[case_number]:
                     continue
 
                 match_pair = match_details[i]
-                filepath1, header1, start1, end1, code1 = match_pair[0]
-                filepath2, header2, start2, end2, code2 = match_pair[1]
+                match1, match2 = match_pair
                 for (fp, _, start, end, _) in match_pair:
                     if fp not in files_to_highlights:
                         groupname, short_path = self._get_group_and_file_from_path(fp)
@@ -1034,7 +1099,9 @@ class MarkusMoss:
                                                                    content_path,
                                                                    self.language)
                     files_to_highlights[fp].add_highlight(start, end)
-                all_html.append(self._match_to_html(i, header1, header2, code1, code2, start1, start2))
+                all_html.append(self._match_to_html(current_match_number, match1.header, match2.header,
+                                                    match1.code, match2.code, match1.start, match2.start))
+                current_match_number += 1
 
             combined_html = self._combine_html_list(all_html)
 

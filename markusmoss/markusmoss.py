@@ -374,7 +374,7 @@ class MarkusMoss:
             f.write(self.moss_report_url)
 
     @staticmethod
-    def _parse_url(self, url):
+    def _parse_url(url):
         data = requests.get(url).content.decode()
         return bs4.BeautifulSoup(data, features='html5lib')
 

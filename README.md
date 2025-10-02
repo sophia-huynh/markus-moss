@@ -45,7 +45,7 @@ Arguments can be specified on the command line or in a config file (see below).
 * --html-parser : (string) bs4 html parser: default is 'html.parser'
 * --force : redo all specified actions: default is not to redo previously executed actions
 * --verbose : log actions to stdout
-* --select : (int) a single case number or (string) 2 or more group names to generate individual reports for.
+* --selected-groups : (int) a single case number or (string) 2 or more group names to generate individual reports for.
 
 #### config format
 
@@ -74,7 +74,7 @@ Information about obtaining the `markus_api_key` and `markus_url` can be found h
 Information about obtaining the `moss_userid` can be found here: http://moss.stanford.edu/
 
 ##### Selecting cases
-When using the `--select` argument, the `selected` directory will be generated to produce a folder
+When using the `--selected-groups` argument, the `selected` directory will be generated to produce a folder
 with the specified case (in the case of a case number being provided), or all cases involving the
 groups (in the case of a list of group names being provided).
 

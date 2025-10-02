@@ -1,1 +1,1 @@
-include markusmoss/templates/*.html
+include markusmoss/templates/*

@@ -292,7 +292,7 @@ class MarkusMoss:
             selected_groups = [selected_groups]
 
         self.selected_groups = selected_groups if selected_groups else []
-        self.exclude_matches = exclude_matches
+        self.exclude_matches = exclude_matches if exclude_matches else {}
         self.__group_data = None
         self.__membership_data = None
         self.__assignment_id = None
@@ -626,7 +626,7 @@ class MarkusMoss:
             proc = subprocess.Popen(
                 [self._pandoc,
                  "--pdf-engine=xelatex",
-                 "-H", self.latex_preamble,
+                 "-H", self.plain_preamble,
                  "-V", "geometry:margin=1cm",
                  "-V", "pagestyle=empty",
                  "-o", destination],
@@ -638,7 +638,7 @@ class MarkusMoss:
                 filename = os.path.split(source_file)[-1]
                 content = b"# %b\n\n```{.%b .numberLines}\n%b\n```" % (
                     filename.encode(errors="replace"), self.language.encode(),
-                    f.read()).encode()
+                    f.read().encode())
             _out, err = proc.communicate(content)
             if proc.returncode != 0:
                 sys.stderr.write(f"[PANDOC ERROR]{err}\n")
@@ -850,6 +850,10 @@ class MarkusMoss:
     @property
     def latex_preamble(self):
         return os.path.join(os.path.dirname(__file__), 'templates', 'latex_preamble.tex')
+
+    @property
+    def plain_preamble(self):
+        return os.path.join(os.path.dirname(__file__), 'templates', 'plain_preamble.tex')
 
     @property
     def highlight_lua(self):

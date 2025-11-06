@@ -357,6 +357,11 @@ class MarkusMoss:
         if os.path.isfile(self.moss_report_url_file) and not self.force:
             return
         starter_files = glob.glob(os.path.join(self.org_starter_files_dir, "*", self.file_glob), recursive=True)
+
+        # If there are no starter files downloaded as above, then just use everything in the starter_files directory
+        # that matches our file glob.
+        if not starter_files:
+            starter_files = glob.glob(os.path.join(self.starter_files_dir, self.file_glob), recursive=True)
         for i, filename in enumerate(starter_files):
             self._print(f"Sending starter files to MOSS {i + 1}/{len(starter_files)}", end="\r")
             self.moss.addBaseFile(filename, os.path.relpath(filename, self.workdir))
@@ -395,7 +400,7 @@ class MarkusMoss:
                 f.write(self._localize_page_contents(parsed_html))
             for src_url in [f.attrs['src'] for f in parsed_html.find_all('frame')]:
                 with open(os.path.join(dest_dir, os.path.basename(src_url)), 'w') as f:
-                    f.write(self._localize_page_contents(self._parse_url(os.path.join(url, src_url))))
+                    f.write(self._localize_page_contents(self._parse_url(f"{url}/{src_url}")))
 
     def download_moss_report(self) -> None:
         if not os.path.isdir(self.moss_report_download_dir) or self.force:
@@ -636,9 +641,15 @@ class MarkusMoss:
             )
             with open(source_file, "r") as f:
                 filename = os.path.split(source_file)[-1]
-                content = b"# %b\n\n```{.%b .numberLines}\n%b\n```" % (
-                    filename.encode(errors="replace"), self.language.encode(),
-                    f.read().encode())
+                try:
+                    content = b"# %b\n\n```{.%b .numberLines}\n%b\n```" % (
+                        filename.encode(errors="replace"), self.language.encode(),
+                        f.read().encode()
+                    )
+                except:
+                    sys.stderr.write(f"[ERROR] Could not copy {source_file} to PDF\n")
+                    sys.stderr.flush()
+                    return False
             _out, err = proc.communicate(content)
             if proc.returncode != 0:
                 sys.stderr.write(f"[PANDOC ERROR]{err}\n")

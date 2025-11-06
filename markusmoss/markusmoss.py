@@ -292,7 +292,7 @@ class MarkusMoss:
             selected_groups = [selected_groups]
 
         self.selected_groups = selected_groups if selected_groups else []
-        self.exclude_matches = exclude_matches
+        self.exclude_matches = exclude_matches if exclude_matches else {}
         self.__group_data = None
         self.__membership_data = None
         self.__assignment_id = None
@@ -357,6 +357,11 @@ class MarkusMoss:
         if os.path.isfile(self.moss_report_url_file) and not self.force:
             return
         starter_files = glob.glob(os.path.join(self.org_starter_files_dir, "*", self.file_glob), recursive=True)
+
+        # If there are no starter files downloaded as above, then just use everything in the starter_files directory
+        # that matches our file glob.
+        if not starter_files:
+            starter_files = glob.glob(os.path.join(self.starter_files_dir, self.file_glob), recursive=True)
         for i, filename in enumerate(starter_files):
             self._print(f"Sending starter files to MOSS {i + 1}/{len(starter_files)}", end="\r")
             self.moss.addBaseFile(filename, os.path.relpath(filename, self.workdir))
@@ -395,7 +400,7 @@ class MarkusMoss:
                 f.write(self._localize_page_contents(parsed_html))
             for src_url in [f.attrs['src'] for f in parsed_html.find_all('frame')]:
                 with open(os.path.join(dest_dir, os.path.basename(src_url)), 'w') as f:
-                    f.write(self._localize_page_contents(self._parse_url(os.path.join(url, src_url))))
+                    f.write(self._localize_page_contents(self._parse_url(f"{url}/{src_url}")))
 
     def download_moss_report(self) -> None:
         if not os.path.isdir(self.moss_report_download_dir) or self.force:
@@ -626,7 +631,7 @@ class MarkusMoss:
             proc = subprocess.Popen(
                 [self._pandoc,
                  "--pdf-engine=xelatex",
-                 "-H", self.latex_preamble,
+                 "-H", self.plain_preamble,
                  "-V", "geometry:margin=1cm",
                  "-V", "pagestyle=empty",
                  "-o", destination],
@@ -636,9 +641,15 @@ class MarkusMoss:
             )
             with open(source_file, "r") as f:
                 filename = os.path.split(source_file)[-1]
-                content = b"# %b\n\n```{.%b .numberLines}\n%b\n```" % (
-                    filename.encode(errors="replace"), self.language.encode(),
-                    f.read()).encode()
+                try:
+                    content = b"# %b\n\n```{.%b .numberLines}\n%b\n```" % (
+                        filename.encode(errors="replace"), self.language.encode(),
+                        f.read().encode()
+                    )
+                except:
+                    sys.stderr.write(f"[ERROR] Could not copy {source_file} to PDF\n")
+                    sys.stderr.flush()
+                    return False
             _out, err = proc.communicate(content)
             if proc.returncode != 0:
                 sys.stderr.write(f"[PANDOC ERROR]{err}\n")
@@ -850,6 +861,10 @@ class MarkusMoss:
     @property
     def latex_preamble(self):
         return os.path.join(os.path.dirname(__file__), 'templates', 'latex_preamble.tex')
+
+    @property
+    def plain_preamble(self):
+        return os.path.join(os.path.dirname(__file__), 'templates', 'plain_preamble.tex')
 
     @property
     def highlight_lua(self):

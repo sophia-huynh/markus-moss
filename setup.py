@@ -16,7 +16,7 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     install_requires=["mosspy==1.0.8", "toml==0.10.2",
                       "html5lib==1.1", "pypdf",
-                      "markusapi>=0.3.0 @ git+https://github.com/MarkUsProject/markus-api.git",
+                      "markusapi>=0.3.0",
                       "requests>=2.32.4",
                       "urllib3>=2.5.0",
                       "toc_pdf_merge @ git+https://github.com/sophia-huynh/toc-pdf-merge.git",

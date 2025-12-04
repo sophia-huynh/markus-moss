@@ -400,7 +400,8 @@ class MarkusMoss:
                 f.write(self._localize_page_contents(parsed_html))
             for src_url in [f.attrs['src'] for f in parsed_html.find_all('frame')]:
                 with open(os.path.join(dest_dir, os.path.basename(src_url)), 'w', encoding='utf-8') as f:
-                    f.write(self._localize_page_contents(self._parse_url(f"{url}/{src_url}")))
+                    contents = self._parse_url(f"{url}/{src_url}")
+                    f.write(self._localize_page_contents(contents))
 
     def download_moss_report(self) -> None:
         if not os.path.isdir(self.moss_report_download_dir) or self.force:

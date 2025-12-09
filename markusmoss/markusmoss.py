@@ -1169,5 +1169,9 @@ class MarkusMoss:
                     os.makedirs(filename, exist_ok=True)
                 else:
                     os.makedirs(dest, exist_ok=True)
-                    with open(filename, "wb") as f:
-                        f.write(zf.read(fname))
+                    try:
+                        with open(filename, "wb") as f:
+                            f.write(zf.read(fname))
+                    except Exception as e:
+                        sys.stderr.write(f"[UNZIP ERROR] Could not write {filename}:\n{e}\n")
+                        sys.stderr.flush()
